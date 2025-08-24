@@ -1,85 +1,119 @@
--- Instant Teleport Forward Script (Mobile)
-local Player = game:GetService("Players").LocalPlayer
+-- Funny Animation Script (Auto Give Tool)
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Player = Players.LocalPlayer
 local Character = Player.Character or Player.CharacterAdded:Wait()
-local RootPart = Character:WaitForChild("HumanoidRootPart")
 
--- Create simple mobile GUI
-local ScreenGui = Instance.new("ScreenGui")
-ScreenGui.Name = "MobileTeleportGUI"
-ScreenGui.Parent = game:GetService("CoreGui")
-ScreenGui.ResetOnSpawn = false
+-- Create the funny tool
+local function createFunnyTool()
+    local tool = Instance.new("Tool")
+    tool.Name = "SecretItem"
+    tool.ToolTip = "Hmm... what does this do?"
+    tool.RequiresHandle = false
+    
+    -- Customize the tool appearance
+    local part = Instance.new("Part")
+    part.Size = Vector3.new(0.5, 0.5, 2)
+    part.BrickColor = BrickColor.new("Bright red")
+    part.Material = Enum.Material.Neon
+    part.Parent = tool
+    
+    tool.Parent = Player.Backpack
+    
+    return tool
+end
 
-local MainFrame = Instance.new("Frame")
-MainFrame.Size = UDim2.new(0, 180, 0, 100)
-MainFrame.Position = UDim2.new(0, 20, 0.7, -50)
-MainFrame.BackgroundColor3 = Color3.fromRGB(40, 40, 45)
-MainFrame.BorderSizePixel = 0
-MainFrame.Active = true
-MainFrame.Draggable = true
-MainFrame.Parent = ScreenGui
-
-local TeleportButton = Instance.new("TextButton")
-TeleportButton.Size = UDim2.new(0.8, 0, 0, 50)
-TeleportButton.Position = UDim2.new(0.1, 0, 0.2, 0)
-TeleportButton.BackgroundColor3 = Color3.fromRGB(60, 160, 60)
-TeleportButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-TeleportButton.Text = "📲 TELEPORT"
-TeleportButton.Font = Enum.Font.GothamBold
-TeleportButton.TextSize = 16
-TeleportButton.Parent = MainFrame
-
-local CloseButton = Instance.new("TextButton")
-CloseButton.Size = UDim2.new(0, 30, 0, 30)
-CloseButton.Position = UDim2.new(1, -30, 0, 0)
-CloseButton.BackgroundColor3 = Color3.fromRGB(255, 60, 60)
-CloseButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-CloseButton.Text = "X"
-CloseButton.Font = Enum.Font.GothamBold
-CloseButton.Parent = MainFrame
-
--- Instant teleport function
-local function InstantTeleport()
-    if not Character or not RootPart then return end
-    
-    -- Calculate 5 steps forward (approximately 10-12 studs)
-    local teleportDistance = 12
-    local forwardDirection = RootPart.CFrame.LookVector
-    local currentPosition = RootPart.Position
-    local targetPosition = currentPosition + (forwardDirection * teleportDistance)
-    
-    -- Create new CFrame looking in the same direction
-    local newCFrame = CFrame.new(targetPosition, targetPosition + forwardDirection)
-    
-    -- Instant teleport
-    RootPart.CFrame = newCFrame
-    
-    -- Visual feedback
-    TeleportButton.Text = "✅ TELEPORTED"
-    TeleportButton.BackgroundColor3 = Color3.fromRGB(80, 180, 80)
-    
-    -- Reset button after 1 second
-    task.delay(1, function()
-        if TeleportButton then
-            TeleportButton.Text = "📲 TELEPORT"
-            TeleportButton.BackgroundColor3 = Color3.fromRGB(60, 160, 60)
+-- Crazy animation function
+local function startFunnyAnimation(tool)
+    tool.Activated:Connect(function()
+        local humanoid = Character:FindFirstChild("Humanoid")
+        if not humanoid then return end
+        
+        -- Get the character's arms
+        local rightArm = Character:FindFirstChild("RightHand") or Character:FindFirstChild("Right Arm")
+        local leftArm = Character:FindFirstChild("LeftHand") or Character:FindFirstChild("Left Arm")
+        
+        if rightArm and leftArm then
+            -- Save original positions
+            local originalRightPos = rightArm.Position
+            local originalLeftPos = leftArm.Position
+            
+            -- Create crazy animation loop
+            local stopAnimation = false
+            
+            -- Function to make arms go crazy
+            local function crazyArms()
+                while tool.Parent == Character and not stopAnimation do
+                    -- Get character's lower body position
+                    local humanoidRootPart = Character:FindFirstChild("HumanoidRootPart")
+                    local lowerBodyPosition = humanoidRootPart and humanoidRootPart.Position - Vector3.new(0, 2, 0)
+                    
+                    if lowerBodyPosition then
+                        -- Make arms rapidly move around lower body area
+                        rightArm.CFrame = CFrame.new(lowerBodyPosition + Vector3.new(
+                            math.random(-0.5, 0.5),
+                            math.random(-0.3, 0.3),
+                            math.random(-0.5, 0.5)
+                        ))
+                        
+                        leftArm.CFrame = CFrame.new(lowerBodyPosition + Vector3.new(
+                            math.random(-0.5, 0.5),
+                            math.random(-0.3, 0.3),
+                            math.random(-0.5, 0.5)
+                        ))
+                    end
+                    
+                    wait(0.05) -- Very fast movement
+                end
+            end
+            
+            -- Start the animation
+            coroutine.wrap(crazyArms)()
+            
+            -- Reset when tool is unequipped
+            tool.Unequipped:Connect(function()
+                stopAnimation = true
+                
+                -- Return arms to original positions
+                rightArm.CFrame = CFrame.new(originalRightPos)
+                leftArm.CFrame = CFrame.new(originalLeftPos)
+            end)
         end
     end)
 end
 
--- Button click event
-TeleportButton.MouseButton1Click:Connect(function()
-    InstantTeleport()
-end)
+-- Give tool to player automatically
+local function giveToolToPlayer()
+    -- Wait for backpack to exist
+    if not Player:FindFirstChild("Backpack") then
+        Player:WaitForChild("Backpack")
+    end
+    
+    -- Create and setup the tool
+    local tool = createFunnyTool()
+    startFunnyAnimation(tool)
+    
+    -- Auto-equip the tool
+    tool.Parent = Player.Backpack
+    tool:WaitForChild("Parent")
+    
+    -- Try to equip after a short delay
+    wait(1)
+    if tool.Parent == Player.Backpack then
+        tool.Parent = Character
+    end
+end
 
--- Close button
-CloseButton.MouseButton1Click:Connect(function()
-    ScreenGui:Destroy()
-end)
+-- Run when character exists
+if Character then
+    giveToolToPlayer()
+end
 
--- Character respawn handling
+-- Also run when new character spawns
 Player.CharacterAdded:Connect(function(newChar)
     Character = newChar
-    RootPart = newChar:WaitForChild("HumanoidRootPart")
+    wait(2) -- Wait for character to fully load
+    giveToolToPlayer()
 end)
 
-warn("Mobile Teleport Script Loaded! Tap the green button to teleport.")
+warn("Funny item has been added to your backpack! Equip it to see the effect.")
