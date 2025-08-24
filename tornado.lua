@@ -1,68 +1,114 @@
---// Торнадо-скрипт для Roblox
---// Работает только через Executor (Delta и т.п.)
+-- Tornado (educational, use at your own risk)
+-- Controls: G toggle, = increase radius, - decrease radius
+-- Chat commands: /tornado on|off, /radius <number>
 
--- Настройки
-local enabled = false -- начальное состояние
-local radius = 10 -- радиус вращения
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UIS = game:GetService("UserInputService")
+local lp = Players.LocalPlayer
 
--- UI для управления (кнопка + ползунок)
-local ScreenGui = Instance.new("ScreenGui")
-local Frame = Instance.new("Frame")
-local Toggle = Instance.new("TextButton")
-local Slider = Instance.new("TextButton")
+local enabled = false
+local radius = 12          -- стартовый радиус
+local minR, maxR = 4, 60   -- пределы
+local scanRange = 120      -- искать детали в этом радиусе от тебя
+local angularSpeed = 2.2   -- рад/сек
+local targets = {}
 
-ScreenGui.Parent = game.CoreGui
-Frame.Parent = ScreenGui
-Frame.Size = UDim2.new(0,200,0,100)
-Frame.Position = UDim2.new(0.05,0,0.05,0)
-Frame.BackgroundColor3 = Color3.fromRGB(30,30,30)
-Frame.Active = true
-Frame.Draggable = true
+local function clamp(n, a, b) if n < a then return a elseif n > b then return b else return n end end
 
-Toggle.Parent = Frame
-Toggle.Size = UDim2.new(0,180,0,40)
-Toggle.Position = UDim2.new(0,10,0,10)
-Toggle.Text = "Торнадо: OFF"
-Toggle.BackgroundColor3 = Color3.fromRGB(60,60,60)
+-- Фаза для каждой детали (число из GetDebugId)
+local function phase(part)
+    local id = part:GetDebugId()
+    local n = tonumber(id:match("%d+")) or 0
+    return (n % 628) / 100 -- 0..6.28
+end
 
-Slider.Parent = Frame
-Slider.Size = UDim2.new(0,180,0,40)
-Slider.Position = UDim2.new(0,10,0,55)
-Slider.Text = "Радиус: "..radius
-Slider.BackgroundColor3 = Color3.fromRGB(60,60,60)
+-- Фильтр: берем только реальные физические детали, не Anchored, не твой персонаж, не игроки
+local function eligible(part, myChar)
+    if not part:IsA("BasePart") then return false end
+    if part.Anchored then return false end
+    if part.Parent == myChar then return false end
+    -- не трогаем живых игроков (NPC можно, но игрокам бессмысленно — не реплицируется)
+    local hum = part.Parent and part.Parent:FindFirstChildOfClass("Humanoid")
+    if hum and Players:GetPlayerFromCharacter(part.Parent) then return false end
+    return true
+end
 
--- Логика переключения
-Toggle.MouseButton1Click:Connect(function()
-    enabled = not enabled
-    Toggle.Text = enabled and "Торнадо: ON" or "Торнадо: OFF"
-end)
-
--- Логика изменения радиуса (по кликам)
-Slider.MouseButton1Click:Connect(function()
-    radius = radius + 5
-    if radius > 50 then radius = 5 end
-    Slider.Text = "Радиус: "..radius
-end)
-
--- Основной цикл торнадо
+-- Переиндексация целей раз в 0.5 сек (чтоб не грузить)
 task.spawn(function()
-    local angle = 0
     while true do
-        task.wait(0.05)
-        if enabled then
-            angle += 0.2
-            local root = game.Players.LocalPlayer.Character and game.Players.LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
-            if root then
-                for _,obj in pairs(workspace:GetDescendants()) do
-                    if obj:IsA("BasePart") and not obj.Anchored and obj.Parent ~= game.Players.LocalPlayer.Character then
-                        local x = root.Position.X + math.cos(angle + obj:GetDebugId()) * radius
-                        local z = root.Position.Z + math.sin(angle + obj:GetDebugId()) * radius
-                        local y = root.Position.Y
-                        obj.Velocity = Vector3.new(0,20,0) -- чуть вверх
-                        obj.CFrame = CFrame.new(Vector3.new(x,y,z))
-                    end
+        task.wait(0.5)
+        local char = lp.Character
+        local hrp = char and char:FindFirstChild("HumanoidRootPart")
+        if not hrp then targets = {} continue end
+        local origin = hrp.Position
+
+        local newTargets = {}
+        for _, d in ipairs(workspace:GetDescendants()) do
+            if eligible(d, char) then
+                local dist = (d.Position - origin).Magnitude
+                if dist <= scanRange then
+                    newTargets[#newTargets+1] = d
                 end
             end
         end
+        targets = newTargets
     end
 end)
+
+-- Управление с клавы
+UIS.InputBegan:Connect(function(input, gp)
+    if gp then return end
+    if input.KeyCode == Enum.KeyCode.G then
+        enabled = not enabled
+        print("Tornado:", enabled and "ON" or "OFF")
+    elseif input.KeyCode == Enum.KeyCode.Equals then
+        radius = clamp(radius + 2, minR, maxR)
+        print("Radius:", radius)
+    elseif input.KeyCode == Enum.KeyCode.Minus then
+        radius = clamp(radius - 2, minR, maxR)
+        print("Radius:", radius)
+    end
+end)
+
+-- Команды через чат (удобно на телефоне)
+lp.Chatted:Connect(function(msg)
+    msg = msg:lower()
+    if msg == "/tornado on" then enabled = true; print("Tornado: ON") return end
+    if msg == "/tornado off" then enabled = false; print("Tornado: OFF") return end
+    local r = msg:match("^/radius%s+(%d+)$")
+    if r then
+        radius = clamp(tonumber(r), minR, maxR)
+        print("Radius:", radius)
+    end
+end)
+
+-- Основной цикл
+RunService.Heartbeat:Connect(function(dt)
+    if not enabled then return end
+    local char = lp.Character
+    local hrp = char and char:FindFirstChild("HumanoidRootPart")
+    if not hrp then return end
+
+    local base = tick() * angularSpeed
+    local origin = hrp.Position
+
+    for _, p in ipairs(targets) do
+        if p and p.Parent and not p.Anchored then
+            local ang = base + phase(p)
+            local targetPos = Vector3.new(
+                origin.X + math.cos(ang) * radius,
+                origin.Y,
+                origin.Z + math.sin(ang) * radius
+            )
+            -- небольшой подброс, чтобы не залипали
+            p.AssemblyLinearVelocity = Vector3.new(0, 6, 0)
+            -- безопасно пробуем задать позицию
+            pcall(function()
+                p.CFrame = CFrame.new(targetPos, origin)
+            end)
+        end
+    end
+end)
+
+print("[Tornado] loaded. Press G or type /tornado on")
